@@ -9,34 +9,6 @@ type Subscription interface {
 	Wait()
 }
 
-type Precondition struct {
-	condition bool
-	locker    sync.Locker
-	cond      *sync.Cond
-}
-
-func NewPrecondition() *Precondition {
-	mutex := &sync.Mutex{}
-	return &Precondition{false, mutex, sync.NewCond(mutex)}
-}
-
-func (p *Precondition) Wait() {
-	p.locker.Lock()
-	for !p.condition {
-		p.cond.Wait()
-	}
-	p.locker.Unlock()
-}
-
-func (p *Precondition) Ok() {
-	if p.condition {
-		return
-	}
-	p.locker.Lock()
-	p.condition = true
-	p.locker.Unlock()
-}
-
 type Trigger struct {
 	state  int
 	locker sync.Locker
@@ -46,11 +18,6 @@ type Trigger struct {
 func NewTrigger() *Trigger {
 	mutex := &sync.Mutex{}
 	return &Trigger{0, mutex, sync.NewCond(mutex)}
-}
-
-type TriggerSubscription struct {
-	trigger  *Trigger
-	snapshot int
 }
 
 func (t *Trigger) Subscribe() Subscription {
@@ -65,6 +32,11 @@ func (t *Trigger) Notify() {
 	t.state++
 	t.locker.Unlock()
 	t.cond.Broadcast()
+}
+
+type TriggerSubscription struct {
+	trigger  *Trigger
+	snapshot int
 }
 
 func (ts *TriggerSubscription) Wait() {

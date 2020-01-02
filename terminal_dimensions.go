@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"sync"
@@ -15,6 +16,7 @@ type TerminalDimensionsManagerOptions struct {
 
 type TerminalDimensionsManager struct {
 	Options       TerminalDimensionsManagerOptions
+	w             *bufio.Writer
 	width, height int
 	trigger       *Trigger
 	mutex         *sync.RWMutex
@@ -24,13 +26,19 @@ func NewTerminalDimensionsManager(
 	options TerminalDimensionsManagerOptions) *TerminalDimensionsManager {
 	return &TerminalDimensionsManager{
 		options,
+		nil,
 		0, 0,
 		NewTrigger(),
 		&sync.RWMutex{}}
 }
 
 func (tdm *TerminalDimensionsManager) Client() *TerminalDimensionsClient {
-	return &TerminalDimensionsClient{tdm, tdm.trigger.Subscribe()}
+	return &TerminalDimensionsClient{tdm}
+}
+
+func (tdm *TerminalDimensionsManager) notify() {
+	Logger.Print("TerminalDimensionsManager Notify")
+	tdm.trigger.Notify()
 }
 
 func (tdm *TerminalDimensionsManager) HandleCPR(n, m int) {
@@ -39,16 +47,34 @@ func (tdm *TerminalDimensionsManager) HandleCPR(n, m int) {
 	tdm.height = n
 	Logger.Print("New terminal width, height := ", tdm.width, tdm.height)
 	tdm.mutex.Unlock()
-	tdm.trigger.Notify()
+	tdm.notify()
 }
 
-func (tdm *TerminalDimensionsManager) requestCUP() {
-	ansi := ANSI{tdm.Options.Writer}
-	OrDie(ansi.SCP())
-	OrDie(ansi.CUF(MAX_TERMINAL_DIMENSION))
-	OrDie(ansi.CUD(MAX_TERMINAL_DIMENSION))
-	OrDie(ansi.DSR())
-	OrDie(ansi.RCP())
+func (tdm *TerminalDimensionsManager) requestCPR() error {
+	Logger.Print("Requesting CPR")
+	ansi := ANSI{tdm.w}
+	var err error
+	err = ansi.SCP()
+	if err != nil {
+		return err
+	}
+	err = ansi.CUF(MAX_TERMINAL_DIMENSION)
+	if err != nil {
+		return err
+	}
+	err = ansi.CUD(MAX_TERMINAL_DIMENSION)
+	if err != nil {
+		return err
+	}
+	err = ansi.DSR()
+	if err != nil {
+		return err
+	}
+	err = ansi.RCP()
+	if err != nil {
+		return err
+	}
+	return tdm.w.Flush()
 }
 
 func (tdm *TerminalDimensionsManager) Start() error {
@@ -58,17 +84,20 @@ func (tdm *TerminalDimensionsManager) Start() error {
 	if tdm.Options.WinchSubscription == nil {
 		return fmt.Errorf("no WinchSubscription")
 	}
+	tdm.w = bufio.NewWriter(tdm.Options.Writer)
+	var err error
 	Logger.Print("Starting TerminalDimensionsManager")
 	for {
-		tdm.requestCUP()
+		err = tdm.requestCPR()
+		if err != nil {
+			return err
+		}
 		tdm.Options.WinchSubscription.Wait()
-		Logger.Print("Received WINCH")
 	}
 }
 
 type TerminalDimensionsClient struct {
-	tdm          *TerminalDimensionsManager
-	subscription Subscription
+	tdm *TerminalDimensionsManager
 }
 
 func (tdc *TerminalDimensionsClient) Dimensions() (int, int) {
@@ -78,6 +107,6 @@ func (tdc *TerminalDimensionsClient) Dimensions() (int, int) {
 	return width, height
 }
 
-func (tdc *TerminalDimensionsClient) Wait() {
-	tdc.subscription.Wait()
+func (tdc *TerminalDimensionsClient) Subscribe() Subscription {
+	return tdc.tdm.trigger.Subscribe()
 }

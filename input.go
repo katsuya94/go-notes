@@ -18,7 +18,7 @@ var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 
 type InputManagerOptions struct {
 	Reader    io.Reader
-	State     *StateClient
+	Search    *SearchClient
 	HandleCPR func(width, height int)
 }
 
@@ -92,9 +92,11 @@ func (im *InputManager) handleEscapeSequence() error {
 func (im *InputManager) handleRune(c rune) {
 	switch c {
 	case DEL:
-		im.Options.State.Backspace()
+		im.Options.Search.Backspace()
+	case '\r':
+		im.Options.Search.Select()
 	default:
-		im.Options.State.Append(c)
+		im.Options.Search.Append(c)
 	}
 }
 
@@ -103,23 +105,27 @@ func (im *InputManager) Start() error {
 	if im.Options.Reader == nil {
 		return fmt.Errorf("no Reader")
 	}
-	if im.Options.State == nil {
-		return fmt.Errorf("no State")
+	if im.Options.Search == nil {
+		return fmt.Errorf("no Search")
 	}
 	if im.Options.HandleCPR == nil {
 		return fmt.Errorf("no HandleCPR")
 	}
 	im.reader = bufio.NewReader(im.Options.Reader)
-	buf := make([]byte, 0, 4)
+	var (
+		buf = make([]byte, 0, 4)
+		b   byte
+		err error
+	)
 	Logger.Print("Starting InputManager")
 	for {
-		b, err := im.reader.ReadByte()
+		b, err = im.reader.ReadByte()
 		if err != nil {
 			return err
 		}
 		if b == ESC {
 			Logger.Print("Start handling escape sequence")
-			err := im.handleEscapeSequence()
+			err = im.handleEscapeSequence()
 			if err != nil {
 				return err
 			}

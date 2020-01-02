@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"syscall"
 
@@ -58,99 +56,4 @@ func WithTerminalAttributes(f func() error) error {
 		}
 	}()
 	return f()
-}
-
-type BytesBuilder struct {
-	buf bytes.Buffer
-}
-
-func (bb *BytesBuilder) WriteBytes(bytes ...byte) {
-	_, err := bb.buf.Write(bytes)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func (bb *BytesBuilder) WriteInteger(n int32) {
-	_, err := fmt.Fprintf(&bb.buf, "%d", n)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func (bb *BytesBuilder) Build(w io.Writer) error {
-	_, err := w.Write(bb.buf.Bytes())
-	if err == nil {
-		bb.buf.Reset()
-	}
-	return err
-}
-
-type ANSI struct {
-	io.Writer
-}
-
-// Cursor Down
-func (a ANSI) CUD(n int32) error {
-	var bb BytesBuilder
-	bb.WriteBytes(ESC, CSI)
-	bb.WriteInteger(n)
-	bb.WriteBytes('B')
-	return bb.Build(a)
-}
-
-// Cursor Forward
-func (a ANSI) CUF(n int32) error {
-	var bb BytesBuilder
-	bb.WriteBytes(ESC, CSI)
-	bb.WriteInteger(n)
-	bb.WriteBytes('C')
-	return bb.Build(a)
-}
-
-// Cursor Position
-func (a ANSI) CUP(n, m int32) error {
-	var bb BytesBuilder
-	bb.WriteBytes(ESC, CSI)
-	bb.WriteInteger(n)
-	bb.WriteBytes(';')
-	bb.WriteInteger(m)
-	bb.WriteBytes('H')
-	return bb.Build(a)
-}
-
-const (
-	EL_END   = 0
-	EL_BEGIN = 1
-	EL_ALL   = 2
-)
-
-// Erase in Line
-func (a ANSI) EL(n int32) error {
-	var bb BytesBuilder
-	bb.WriteBytes(ESC, CSI)
-	bb.WriteInteger(n)
-	bb.WriteBytes('K')
-	return bb.Build(a)
-}
-
-// Device Status Report
-func (a ANSI) DSR() error {
-	var bb BytesBuilder
-	bb.WriteBytes(ESC, CSI, '6', 'n')
-	return bb.Build(a)
-}
-
-// Save Cursor Position
-func (a ANSI) SCP() error {
-	var bb BytesBuilder
-	bb.WriteBytes(ESC, CSI, 's')
-	return bb.Build(a)
-}
-
-// Restore Cursor Position
-func (a ANSI) RCP() error {
-	var bb BytesBuilder
-	bb.WriteBytes(ESC, CSI, 'u')
-	return bb.Build(a)
 }
