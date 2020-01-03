@@ -187,9 +187,11 @@ func (dm *DrawManager) draw() error {
 		if err != nil {
 			return err
 		}
-		err = ansi.CUF(len(query))
-		if err != nil {
-			return err
+		if len(query) > 0 {
+			err = ansi.CUF(len(query))
+			if err != nil {
+				return err
+			}
 		}
 	}
 
