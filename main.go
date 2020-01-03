@@ -29,6 +29,7 @@ func Run() error {
 		Logger = log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
 
 		fail := make(chan error)
+		die := make(chan interface{})
 
 		quit := make(chan os.Signal)
 		signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
@@ -52,13 +53,26 @@ func Run() error {
 		drawManager.Options.TerminalDimensions =
 			terminalDimensionsManager.Client()
 		inputManager.Options.Search = searchManager.Client()
-		inputManager.Options.HandleCPR = terminalDimensionsManager.HandleCPR
+		inputManager.Options.TerminalDimensions =
+			terminalDimensionsManager.Client()
 
 		Logger.Print("Starting managers")
-		go func() { fail <- searchManager.Start() }()
-		go func() { fail <- terminalDimensionsManager.Start() }()
-		go func() { fail <- drawManager.Start() }()
-		go func() { fail <- inputManager.Start() }()
+
+		start := func(f func() error) {
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						die <- r
+					}
+				}()
+				fail <- f()
+			}()
+		}
+
+		start(searchManager.Start)
+		start(terminalDimensionsManager.Start)
+		start(drawManager.Start)
+		start(inputManager.Start)
 
 		defer drawManager.Cleanup()
 

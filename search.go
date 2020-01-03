@@ -22,8 +22,8 @@ type Results struct {
 	m       map[string]*result
 }
 
-func NewResults() Results {
-	return Results{nil, map[string]*result{}}
+func NewResults() *Results {
+	return &Results{nil, map[string]*result{}}
 }
 
 func (r *Results) Add(title string) {
@@ -70,13 +70,15 @@ type SearchManager struct {
 	notesDirectory string
 	query          []rune
 	results        []string
+	selection      int
 	queryTrigger   *Trigger
 	trigger        *Trigger
 	mutex          *sync.RWMutex
 }
 
 func NewSearchManager(options SearchManagerOptions) *SearchManager {
-	return &SearchManager{options, "", nil, nil, NewTrigger(), NewTrigger(), &sync.RWMutex{}}
+	return &SearchManager{
+		options, "", nil, nil, -1, NewTrigger(), NewTrigger(), &sync.RWMutex{}}
 }
 
 func (sm *SearchManager) Client() *SearchClient {
@@ -92,13 +94,10 @@ func (sm *SearchManager) notifyQuery() {
 	sm.queryTrigger.Notify()
 }
 
-func (sm *SearchManager) doSearch() error {
-	Logger.Print("Searching")
+func (sm *SearchManager) searchTitles(query string, results *Results) error {
 	var (
-		query   = string(sm.query)
-		titles  = []string{}
-		results = NewResults()
-		err     error
+		titles = []string{}
+		err    error
 	)
 	walkFunc := func(p string, info os.FileInfo, err error) error {
 		if p == sm.notesDirectory {
@@ -161,8 +160,8 @@ func (sm *SearchManager) doSearch() error {
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		// TODO: handle multiple occurrences in
-		results.Add(strings.TrimRight(scanner.Text(), "\n"))
+		// TODO: handle multiple occurrences in title
+		results.Add(strings.TrimSuffix(scanner.Text(), "\n"))
 	}
 
 	err = cmd.Wait()
@@ -174,10 +173,71 @@ func (sm *SearchManager) doSearch() error {
 		return err
 	}
 
+	return nil
+}
+
+func (sm *SearchManager) searchContents(query string, results *Results) error {
+	var err error
+	cmd := exec.Command("grep", "-i", "-o", "-R", query, sm.notesDirectory)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	cmd.Stderr = os.Stderr
+
+	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	var title string
+	for scanner.Scan() {
+		line := strings.TrimSuffix(scanner.Text(), "\n")
+		if strings.Index(line, sm.notesDirectory) == 0 {
+			title = strings.TrimSuffix(
+				path.Base(line[0:strings.Index(line, ":")]), ".txt")
+		}
+		results.Add(title)
+	}
+
+	err = cmd.Wait()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if exitErr.ExitCode() != 1 {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (sm *SearchManager) search() error {
+	var (
+		query   = string(sm.query)
+		results = NewResults()
+		err     error
+	)
+	Logger.Print("Searching")
+
+	err = sm.searchTitles(query, results)
+	if err != nil {
+		return err
+	}
+
+	err = sm.searchContents(query, results)
+	if err != nil {
+		return err
+	}
+
 	Logger.Print("Found ", results.Len(), " results")
 
 	sm.mutex.Lock()
 	sm.results = results.Sorted()
+	if sm.selection >= len(sm.results) {
+		sm.selection = len(sm.results) - 1
+	}
 	sm.mutex.Unlock()
 	sm.notify()
 	return nil
@@ -197,7 +257,7 @@ func (sm *SearchManager) Start() error {
 	Logger.Print("Starting SearchManager")
 	for {
 		subscription.Wait()
-		err = sm.doSearch()
+		err = sm.search()
 		if err != nil {
 			return err
 		}
@@ -212,12 +272,13 @@ func (sc *SearchClient) Query() string {
 	return string(sc.sm.query)
 }
 
-func (sc *SearchClient) Results() []string {
+func (sc *SearchClient) Results() (int, []string) {
 	sc.sm.mutex.RLock()
+	selection := sc.sm.selection
 	results := make([]string, len(sc.sm.results))
 	copy(results, sc.sm.results)
 	sc.sm.mutex.RUnlock()
-	return results
+	return selection, results
 }
 
 func (sc *SearchClient) Append(c rune) {
@@ -235,13 +296,42 @@ func (sc *SearchClient) Backspace() {
 	sc.sm.notifyQuery()
 }
 
+func (sc *SearchClient) SelectPrevious() {
+	sc.sm.mutex.Lock()
+	if sc.sm.selection > -1 {
+		sc.sm.selection--
+	}
+	sc.sm.mutex.Unlock()
+	sc.sm.trigger.Notify()
+}
+
+func (sc *SearchClient) SelectNext() {
+	sc.sm.mutex.Lock()
+	if sc.sm.selection < len(sc.sm.results)-1 {
+		sc.sm.selection++
+	}
+	sc.sm.mutex.Unlock()
+	sc.sm.trigger.Notify()
+}
+
 func (sc *SearchClient) Select() {
+	sc.sm.mutex.RLock()
 	query := string(sc.sm.query)
+	selection := sc.sm.selection
+	results := make([]string, len(sc.sm.results))
+	copy(results, sc.sm.results)
+	sc.sm.mutex.RUnlock()
 	if query == "" {
 		sc.sm.Options.Selection <- ""
 		return
 	}
-	notePath := path.Join(sc.sm.notesDirectory, query+".txt")
+	var title string
+	if selection == -1 {
+		title = query
+	} else {
+		title = results[selection]
+	}
+	notePath := path.Join(sc.sm.notesDirectory, title+".txt")
 	sc.sm.Options.Selection <- notePath
 }
 

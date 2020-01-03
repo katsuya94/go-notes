@@ -41,15 +41,6 @@ func (tdm *TerminalDimensionsManager) notify() {
 	tdm.trigger.Notify()
 }
 
-func (tdm *TerminalDimensionsManager) HandleCPR(n, m int) {
-	tdm.mutex.Lock()
-	tdm.width = m
-	tdm.height = n
-	Logger.Print("New terminal width, height := ", tdm.width, tdm.height)
-	tdm.mutex.Unlock()
-	tdm.notify()
-}
-
 func (tdm *TerminalDimensionsManager) requestCPR() error {
 	Logger.Print("Requesting CPR")
 	ansi := ANSI{tdm.w}
@@ -98,6 +89,16 @@ func (tdm *TerminalDimensionsManager) Start() error {
 
 type TerminalDimensionsClient struct {
 	tdm *TerminalDimensionsManager
+}
+
+func (tdc *TerminalDimensionsClient) SetDimensions(n, m int) {
+	tdc.tdm.mutex.Lock()
+	tdc.tdm.width = m
+	tdc.tdm.height = n
+	Logger.Print(
+		"New terminal width, height := ", tdc.tdm.width, tdc.tdm.height)
+	tdc.tdm.mutex.Unlock()
+	tdc.tdm.notify()
 }
 
 func (tdc *TerminalDimensionsClient) Dimensions() (int, int) {

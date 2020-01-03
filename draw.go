@@ -126,6 +126,7 @@ func printLine(ansi ANSI, line string, width int, selected bool) error {
 func (dm *DrawManager) draw() error {
 	Logger.Print("Drawing")
 
+	selection, results := dm.Options.Search.Results()
 	width, _ := dm.Options.TerminalDimensions.Dimensions()
 	ansi := ANSI{dm.w}
 	var err error
@@ -138,19 +139,18 @@ func (dm *DrawManager) draw() error {
 
 	// Write query
 	query := dm.Options.Search.Query()
-	err = printLine(ansi, query, width, true)
+	err = printLine(ansi, query, width, selection == -1)
 	if err != nil {
 		return err
 	}
 
 	// Write results
-	results := dm.Options.Search.Results()
-	for _, result := range results {
+	for i, result := range results {
 		err = ansi.NL()
 		if err != nil {
 			return err
 		}
-		err = printLine(ansi, result, width, false)
+		err = printLine(ansi, result, width, selection == i)
 		if err != nil {
 			return err
 		}

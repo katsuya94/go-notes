@@ -17,9 +17,9 @@ const (
 var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 
 type InputManagerOptions struct {
-	Reader    io.Reader
-	Search    *SearchClient
-	HandleCPR func(width, height int)
+	Reader             io.Reader
+	Search             *SearchClient
+	TerminalDimensions *TerminalDimensionsClient
 }
 
 type InputManager struct {
@@ -78,13 +78,17 @@ func (im *InputManager) handleEscapeSequence() error {
 		return ErrInvalidEscapeSequence
 	}
 	switch b {
+	case 'A':
+		im.Options.Search.SelectPrevious()
+	case 'B':
+		im.Options.Search.SelectNext()
 	case 'R':
 		var n, m int
 		_, err := fmt.Sscanf(string(parameterBytes), "%d;%d", &n, &m)
 		if err != nil {
 			return err
 		}
-		im.Options.HandleCPR(n, m)
+		im.Options.TerminalDimensions.SetDimensions(n, m)
 	}
 	return nil
 }
@@ -108,8 +112,8 @@ func (im *InputManager) Start() error {
 	if im.Options.Search == nil {
 		return fmt.Errorf("no Search")
 	}
-	if im.Options.HandleCPR == nil {
-		return fmt.Errorf("no HandleCPR")
+	if im.Options.TerminalDimensions == nil {
+		return fmt.Errorf("no TerminalDimensions")
 	}
 	im.reader = bufio.NewReader(im.Options.Reader)
 	var (
