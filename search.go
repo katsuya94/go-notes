@@ -62,23 +62,23 @@ func (r *Results) Sorted() []string {
 }
 
 type SearchManagerOptions struct {
-	Selection chan<- string
+	Selection      chan<- string
+	NotesDirectory string
 }
 
 type SearchManager struct {
-	Options        SearchManagerOptions
-	notesDirectory string
-	query          []rune
-	results        []string
-	selection      int
-	queryTrigger   *Trigger
-	trigger        *Trigger
-	mutex          *sync.RWMutex
+	Options      SearchManagerOptions
+	query        []rune
+	results      []string
+	selection    int
+	queryTrigger *Trigger
+	trigger      *Trigger
+	mutex        *sync.RWMutex
 }
 
 func NewSearchManager(options SearchManagerOptions) *SearchManager {
 	return &SearchManager{
-		options, "", nil, nil, -1, NewTrigger(), NewTrigger(), &sync.RWMutex{}}
+		options, nil, nil, -1, NewTrigger(), NewTrigger(), &sync.RWMutex{}}
 }
 
 func (sm *SearchManager) Client() *SearchClient {
@@ -100,7 +100,7 @@ func (sm *SearchManager) searchTitles(query string, results *Results) error {
 		err    error
 	)
 	walkFunc := func(p string, info os.FileInfo, err error) error {
-		if p == sm.notesDirectory {
+		if p == sm.Options.NotesDirectory {
 			if err != nil {
 				return err
 			}
@@ -123,7 +123,7 @@ func (sm *SearchManager) searchTitles(query string, results *Results) error {
 		titles = append(titles, title)
 		return nil
 	}
-	err = filepath.Walk(sm.notesDirectory, walkFunc)
+	err = filepath.Walk(sm.Options.NotesDirectory, walkFunc)
 	if err != nil {
 		return err
 	}
@@ -178,7 +178,7 @@ func (sm *SearchManager) searchTitles(query string, results *Results) error {
 
 func (sm *SearchManager) searchContents(query string, results *Results) error {
 	var err error
-	cmd := exec.Command("grep", "-i", "-o", "-R", query, sm.notesDirectory)
+	cmd := exec.Command("grep", "-i", "-o", "-R", query, sm.Options.NotesDirectory)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -194,7 +194,7 @@ func (sm *SearchManager) searchContents(query string, results *Results) error {
 	var title string
 	for scanner.Scan() {
 		line := strings.TrimSuffix(scanner.Text(), "\n")
-		if strings.Index(line, sm.notesDirectory) == 0 {
+		if strings.Index(line, sm.Options.NotesDirectory) == 0 {
 			title = strings.TrimSuffix(
 				path.Base(line[0:strings.Index(line, ":")]), ".txt")
 		}
@@ -247,12 +247,10 @@ func (sm *SearchManager) Start() error {
 	if sm.Options.Selection == nil {
 		return fmt.Errorf("no Selection")
 	}
-	var err error
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+	if sm.Options.NotesDirectory == "" {
+		return fmt.Errorf("no NotesDirectory")
 	}
-	sm.notesDirectory = path.Join(home, "Notes")
+	var err error
 	subscription := sm.queryTrigger.Subscribe()
 	Logger.Print("Starting SearchManager")
 	for {
@@ -331,7 +329,7 @@ func (sc *SearchClient) Select() {
 	} else {
 		title = results[selection]
 	}
-	notePath := path.Join(sc.sm.notesDirectory, title+".txt")
+	notePath := path.Join(sc.sm.Options.NotesDirectory, title+".txt")
 	sc.sm.Options.Selection <- notePath
 }
 

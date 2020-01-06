@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -15,19 +16,28 @@ var Logger *log.Logger
 
 func Run() error {
 	var (
+		config   *Config
 		notePath string
 		err      error
 	)
-	err = WithTerminalAttributes(func() error {
-		var err error
 
+	config, err = LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	if config.LogFile == "" {
+		Logger = log.New(ioutil.Discard, "", 0)
+	} else {
 		file, err := os.OpenFile(
-			"/tmp/go-notes.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+			config.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil {
 			return err
 		}
 		Logger = log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
+	}
 
+	err = WithTerminalAttributes(func() error {
 		fail := make(chan error)
 		die := make(chan interface{})
 
@@ -47,6 +57,7 @@ func Run() error {
 		drawManager := NewDrawManager(DrawManagerOptions{Writer: os.Stdout})
 		inputManager := NewInputManager(InputManagerOptions{Reader: os.Stdin})
 
+		searchManager.Options.NotesDirectory = config.NotesDirectory
 		terminalDimensionsManager.Options.WinchSubscription =
 			NewSignalSubscription(winch)
 		drawManager.Options.Search = searchManager.Client()
