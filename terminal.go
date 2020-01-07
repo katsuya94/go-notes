@@ -31,7 +31,7 @@ func SetSignal(termios *unix.Termios) {
 
 func WithTerminalAttributes(f func() error) error {
 	var err error
-	termios, err := unix.IoctlGetTermios(syscall.Stdin, unix.TIOCGETA)
+	termios, err := unix.IoctlGetTermios(syscall.Stdin, ioctlGetTermios)
 	if err != nil {
 		return err
 	}
@@ -40,14 +40,14 @@ func WithTerminalAttributes(f func() error) error {
 	*original = *termios
 	SetRaw(termios)    // Set terminal to raw mode.
 	SetSignal(termios) // Allow keyboard signaling.
-	err = unix.IoctlSetTermios(syscall.Stdin, unix.TIOCSETA, termios)
+	err = unix.IoctlSetTermios(syscall.Stdin, ioctlSetTermios, termios)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		r := recover()
 		// Restore terminal attributes.
-		err := unix.IoctlSetTermios(syscall.Stdin, unix.TIOCSETA, original)
+		err := unix.IoctlSetTermios(syscall.Stdin, ioctlSetTermios, original)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)
 		}
